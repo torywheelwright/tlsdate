@@ -128,15 +128,24 @@ validate_proxy_port(const char *port)
 }
 
 static void
-parse_proxy_uri(char *proxy, char **scheme, char **host, char **port)
+parse_proxy_uri(char *proxy, char **scheme, char **auth, char **host, char **port)
 {
-  /* Expecting a URI, so: <scheme> '://' <host> ':' <port> */
+  /* Expecting a URI, so: <scheme> '://' [<auth>@] <host> ':' <port> */
   *scheme = proxy;
   proxy = strstr(proxy, "://");
   if (!proxy)
     die("malformed proxy URI");
   *proxy = '\0'; /* terminate scheme string */
   proxy += strlen("://");
+
+  char *proxy_found = strchr(proxy, '@');
+  if (proxy_found) {
+    *auth = proxy;
+    *proxy_found = '\0';
+    proxy += strlen(*auth) + 1;
+  } else {
+    *auth = "";
+  }
 
   *host = proxy;
   proxy = strchr(proxy, ':');
