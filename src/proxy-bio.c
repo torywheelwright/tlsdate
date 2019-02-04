@@ -29,7 +29,6 @@
 #endif
 #include <netdb.h>
 
-#include <math.h>
 #include <stdint.h>
 #include <string.h>
 
