@@ -296,7 +296,7 @@ int http_connect (BIO *b)
       i2 = i1 ? *c : 0;
       i3 = i2 ? *++c : 0;
       if (i3)
-        sc++;
+        c++;
 
       r = BIO_write (b->next_bio,
                      &BASE64_ENCODE_LUT[(i1 & 0b11111100) >> 2],
@@ -316,10 +316,10 @@ int http_connect (BIO *b)
         return 0;
 
       r = BIO_write (b->next_bio,
-                     &(i2
-                       ? BASE64_ENCODE_LUT[((i2 & 0b00001111) << 2)
-                                           | ((i3 & 0b11000000) >> 6)]
-                       : BASE64_ENCODE_PAD),
+                     i2
+                     ? &BASE64_ENCODE_LUT[((i2 & 0b00001111) << 2)
+                                          | ((i3 & 0b11000000) >> 6)]
+                     : &BASE64_ENCODE_PAD,
                      1);
       if ( -1 == r )
         return -1;
@@ -327,9 +327,9 @@ int http_connect (BIO *b)
         return 0;
 
       r = BIO_write (b->next_bio,
-           &(i3
-             ? BASE64_ENCODE_LUT[(i3 & 0b00111111)]
-             : BASE64_ENCODE_PAD),
+                     i3
+                     ? &BASE64_ENCODE_LUT[(i3 & 0b00111111)]
+                     : &BASE64_ENCODE_PAD,
            1);
       if ( -1 == r )
         return -1;

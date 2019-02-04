@@ -96,7 +96,7 @@ know:
 #include "polarssl/ssl.h"
 #endif
 
-const char* EMPTY_AUTH = "";
+char* EMPTY_AUTH = "";
 
 static void
 validate_proxy_scheme(const char *scheme)
