@@ -29,7 +29,9 @@
 #endif
 #include <netdb.h>
 
+#include <math.h>
 #include <stdint.h>
+#include <string.h>
 
 #ifndef HAVE_STRNLEN
 #include "src/common/strnlen.h"
@@ -40,6 +42,7 @@
 const char* BASE64_ENCODE_LUT
   = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 const char BASE64_ENCODE_PAD = '=';
+const char* PROXY_AUTH_HEADER_START = "Proxy-Authorization: Basic ";
 
 int socks4a_connect (BIO *b);
 int socks5_connect (BIO *b);
@@ -259,9 +262,7 @@ int http_connect (BIO *b)
   char buf[4096];
   int retcode;
   char *c;
-  char i1;
-  char i2;
-  char i3;
+  char encode_buf[3];
   snprintf (buf, sizeof (buf), "CONNECT %s:%d HTTP/1.1\r\n",
             ctx->host, ctx->port);
   r = BIO_write (b->next_bio, buf, strlen (buf));
@@ -279,70 +280,40 @@ int http_connect (BIO *b)
 
   /* write proxy auth header, if applicable */
   if (ctx->auth) {
-    #define PROXY_AUTH_HEADER_START "Proxy-Authorization: Basic "
-    r = BIO_write (b->next_bio,
-                   PROXY_AUTH_HEADER_START,
-                   sizeof (PROXY_AUTH_HEADER_START));
-    if ( -1 == r )
-      return -1;
-    if ( (size_t) r != sizeof (PROXY_AUTH_HEADER_START))
-      return 0;
+	  r = strlen (PROXY_AUTH_HEADER_START);
 
-    c = ctx->auth;
+	  /* make sure this header will fit in the buffer. */
+	  /* base64-encoded size is 4/3 original size. */
+	  if ( !(sizeof (buf) >= r + ((unsigned) ceil(strlen(auth) * 4 / 3.0)) + 2)) {
+		  /* buffer too small to accomadate header */
+		  return -1;
+	  }
 
-    /* base64-encode and write auth string */
-    while (*c) {
-      i1 = *c++;
-      i2 = i1 ? *c : 0;
-      i3 = i2 ? *++c : 0;
-      if (i3)
-        c++;
+	  strcpy (buf, PROXY_AUTH_HEADER_START);
 
-      r = BIO_write (b->next_bio,
-                     &BASE64_ENCODE_LUT[(i1 & 0b11111100) >> 2],
-                     1);
-      if ( -1 == r )
-        return -1;
-      if ( (size_t) r != 1)
-        return 0;
+	  c = ctx->auth;
 
-      r = BIO_write (b->next_bio,
-                     &BASE64_ENCODE_LUT[((i1 & 0b00000011) << 4)
-                                        | ((i2 & 0b11110000) >> 4)],
-                     1);
-      if ( -1 == r )
-        return -1;
-      if ( (size_t) r != 1)
-        return 0;
+	  /* base64-encode and write auth string */
+	  while (*c) {
+		  encode_buf[0] = *c++;
+		  encode_buf[1] = encode_buf[0] ? *c : 0;
+		  encode_buf[2] = encode_buf[1] ? *++c : 0;
+		  if (encode_buf[2])
+			  c++;
 
-      r = BIO_write (b->next_bio,
-                     i2
-                     ? &BASE64_ENCODE_LUT[((i2 & 0b00001111) << 2)
-                                          | ((i3 & 0b11000000) >> 6)]
-                     : &BASE64_ENCODE_PAD,
-                     1);
-      if ( -1 == r )
-        return -1;
-      if ( (size_t) r != 1)
-        return 0;
+		  buf[r++] = BASE64_ENCODE_LUT[(encode_buf[0] & 0b11111100) >> 2];
+		  buf[r++] = BASE64_ENCODE_LUT[((encode_buf[0] & 0b00000011) << 4) | ((encode_buf[1] & 0b11110000) >> 4)];
+		  buf[r++] = encode_buf[1] ? BASE64_ENCODE_LUT[((encode_buf[1] & 0b00001111) << 2) | ((encode_buf[2] & 0b11000000) >> 6)] : BASE64_ENCODE_PAD;
+		  buf[r++] = encode_buf[2] ? BASE64_ENCODE_LUT[(encode_buf[2] & 0b00111111)] : BASE64_ENCODE_PAD;
+	  }
 
-      r = BIO_write (b->next_bio,
-                     i3
-                     ? &BASE64_ENCODE_LUT[(i3 & 0b00111111)]
-                     : &BASE64_ENCODE_PAD,
-           1);
-      if ( -1 == r )
-        return -1;
-      if ( (size_t) r != 1)
-        return 0;
-  }
+	  strcpy (buf + r, "\r\n");
 
-  #define PROXY_AUTH_HEADER_END "\r\n"
-  r = BIO_write (b->next_bio, PROXY_AUTH_HEADER_END, sizeof (PROXY_AUTH_HEADER_END));
-  if ( -1 == r )
-    return -1;
-  if ( (size_t) r != sizeof (PROXY_AUTH_HEADER_END))
-    return 0;
+	  r = BIO_write (b->next_bio, buf, strlen (buf));
+	  if ( -1 == r )
+		  return -1;
+	  if ( (size_t) r != strlen(buf))
+		  return 0;
   }
 
   strcpy (buf, "\r\n");
