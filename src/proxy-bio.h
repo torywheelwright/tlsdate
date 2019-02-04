@@ -16,7 +16,7 @@
 #include "util.h"
 
 struct proxy_ctx {
-  char *auth;
+  const char *auth;
   char *host;
   uint16_t port;
   int connected;
