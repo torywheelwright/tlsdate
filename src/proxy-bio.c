@@ -464,11 +464,11 @@ int API BIO_proxy_set_type (BIO *b, const char *type)
   return 0;
 }
 
-int API BIO_proxy_set_auth (BIO *b, char *auth)
+int API BIO_proxy_set_auth (BIO *b, const char *auth)
 {
   struct proxy_ctx *ctx = (struct proxy_ctx *) b->ptr;
   if (strlen(auth)) {
-    ctx->auth = auth;
+	  ctx->auth = strdup (auth);
   }
   return 0;
 }
