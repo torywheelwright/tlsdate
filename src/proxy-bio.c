@@ -279,19 +279,18 @@ int http_connect (BIO *b)
 
   /* write proxy auth header, if applicable */
   if (ctx->auth) {
+	  c = ctx->auth;
 	  r = strlen (PROXY_AUTH_HEADER_START);
 
 	  /* make sure this header will fit in the buffer. */
 	  /* base64-encoded size is 4/3 original size. */
-	  int div_tmp = strlen(auth) * 4; /* hacky way to get ceil(size*4/3) without -lmath. */
+	  int div_tmp = strlen(c) * 4; /* hacky way to get ceil(size*4/3) without -lmath. */
 	  if ( !(sizeof (buf) >= r + (div_tmp/3 + (div_tmp % 3 != 0)) + 2)) {
 		  /* buffer too small to accomadate header */
 		  return -1;
 	  }
 
 	  strcpy (buf, PROXY_AUTH_HEADER_START);
-
-	  c = ctx->auth;
 
 	  /* base64-encode and write auth string */
 	  while (*c) {
