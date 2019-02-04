@@ -37,6 +37,10 @@
 
 #include "src/proxy-bio.h"
 
+const char* BASE64_ENCODE_LUT
+  = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+const char BASE64_ENCODE_PAD = '=';
+
 int socks4a_connect (BIO *b);
 int socks5_connect (BIO *b);
 int http_connect (BIO *b);
@@ -48,6 +52,7 @@ int proxy_new (BIO *b)
     return 0;
   ctx->connected = 0;
   ctx->connect = NULL;
+  ctx->auth = NULL;
   ctx->host = NULL;
   ctx->port = 0;
   b->init = 1;
@@ -62,6 +67,8 @@ int proxy_free (BIO *b)
   if (!b || !b->ptr)
     return 1;
   c = (struct proxy_ctx *) b->ptr;
+  if (c->auth)
+    free (c->auth);
   if (c->host)
     free (c->host);
   c->host = NULL;
@@ -251,6 +258,10 @@ int http_connect (BIO *b)
   struct proxy_ctx *ctx = (struct proxy_ctx *) b->ptr;
   char buf[4096];
   int retcode;
+  char *c;
+  char i1;
+  char i2;
+  char i3;
   snprintf (buf, sizeof (buf), "CONNECT %s:%d HTTP/1.1\r\n",
             ctx->host, ctx->port);
   r = BIO_write (b->next_bio, buf, strlen (buf));
@@ -265,6 +276,75 @@ int http_connect (BIO *b)
     return -1;
   if ( (size_t) r != strlen(buf))
     return 0;
+
+  /* write proxy auth header, if applicable */
+  if (ctx->auth) {
+    #define PROXY_AUTH_HEADER_START "Proxy-Authorization: Basic "
+    r = BIO_write (b->next_bio,
+                   PROXY_AUTH_HEADER_START,
+                   sizeof (PROXY_AUTH_HEADER_START));
+    if ( -1 == r )
+      return -1;
+    if ( (size_t) r != sizeof (PROXY_AUTH_HEADER_START))
+      return 0;
+
+    c = ctx->auth;
+
+    /* base64-encode and write auth string */
+    while (*c) {
+      i1 = *c++;
+      i2 = i1 ? *c : 0;
+      i3 = i2 ? *++c : 0;
+      if (i3)
+        sc++;
+
+      r = BIO_write (b->next_bio,
+                     &BASE64_ENCODE_LUT[(i1 & 0b11111100) >> 2],
+                     1);
+      if ( -1 == r )
+        return -1;
+      if ( (size_t) r != 1)
+        return 0;
+
+      r = BIO_write (b->next_bio,
+                     &BASE64_ENCODE_LUT[((i1 & 0b00000011) << 4)
+                                        | ((i2 & 0b11110000) >> 4)],
+                     1);
+      if ( -1 == r )
+        return -1;
+      if ( (size_t) r != 1)
+        return 0;
+
+      r = BIO_write (b->next_bio,
+                     &(i2
+                       ? BASE64_ENCODE_LUT[((i2 & 0b00001111) << 2)
+                                           | ((i3 & 0b11000000) >> 6)]
+                       : BASE64_ENCODE_PAD),
+                     1);
+      if ( -1 == r )
+        return -1;
+      if ( (size_t) r != 1)
+        return 0;
+
+      r = BIO_write (b->next_bio,
+           &(i3
+             ? BASE64_ENCODE_LUT[(i3 & 0b00111111)]
+             : BASE64_ENCODE_PAD),
+           1);
+      if ( -1 == r )
+        return -1;
+      if ( (size_t) r != 1)
+        return 0;
+  }
+
+  #define PROXY_AUTH_HEADER_END "\r\n"
+  r = BIO_write (b->next_bio, PROXY_AUTH_HEADER_END, sizeof (PROXY_AUTH_HEADER_END));
+  if ( -1 == r )
+    return -1;
+  if ( (size_t) r != sizeof (PROXY_AUTH_HEADER_END))
+    return 0;
+  }
+
   strcpy (buf, "\r\n");
   r = BIO_write (b->next_bio, buf, strlen (buf));
   if ( -1 == r )
@@ -411,6 +491,15 @@ int API BIO_proxy_set_type (BIO *b, const char *type)
     ctx->connect = http_connect;
   else
     return 1;
+  return 0;
+}
+
+int API BIO_proxy_set_auth (BIO *b, const char *auth)
+{
+  struct proxy_ctx *ctx = (struct proxy_ctx *) b->ptr;
+  if (strlen(auth)) {
+    ctx->auth = auth;
+  }
   return 0;
 }
 
