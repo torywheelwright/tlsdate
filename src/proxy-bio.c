@@ -284,7 +284,7 @@ int http_connect (BIO *b)
 
 	  /* make sure this header will fit in the buffer. */
 	  /* base64-encoded size is 4/3 original size. */
-	  if ( !(sizeof (buf) >= r + ((unsigned) ceil(strlen(auth) * 4 / 3.0)) + 2)) {
+	  if ( !(sizeof (buf) >= r + ((unsigned) ceil(strlen(ctx->auth) * 4 / 3.0)) + 2)) {
 		  /* buffer too small to accomadate header */
 		  return -1;
 	  }
